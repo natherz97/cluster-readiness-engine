@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Regression guard: the same cordoned node carrying the unschedulable taint as
+# cordoned-node-opted-in/, but the target declares no taintSelectors. Without
+# the ADR-081 opt-in signal, default exclusion still applies.
+nodes:
+  - name: node002
+    cordoned: true
+    taints:
+      - key: node.kubernetes.io/unschedulable
+        effect: NoSchedule

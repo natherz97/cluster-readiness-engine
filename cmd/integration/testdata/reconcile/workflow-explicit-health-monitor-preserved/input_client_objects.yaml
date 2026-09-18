@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# ADR-081 regression guard: a Workflow that does NOT opt into cordoned-node
+# targeting (no taintSelectors) must keep its own explicit nodeHealthMonitor
+# untouched. createJobForGroup's unconditional clear is gated on
+# targetsCordonedNodes; this pins that a caller-authored monitor survives when
+# that gate is false, not just when it's nil.
+apiVersion: v1
+kind: Node
+metadata:
+  name: explicit-monitor-node-01
+  labels:
+    nvidia.com/gpu.present: "true"
+    nvidia.com/gpu.product: "NVIDIA-H100"
+    kubernetes.io/hostname: explicit-monitor-node-01
+spec:
+  providerID: "aws://us-east-1a/i-dddd0001"
+---
+apiVersion: nvcre.nvidia.com/v1alpha1
+kind: Workflow
+metadata:
+  name: test-explicit-monitor-preserved
+  namespace: default
+spec:
+  jobTemplate:
+    spec:
+      nodeHealthMonitor:
+        cel:
+          expression: 'node.metadata.labels["nvidia.com/gpu.unhealthy"] == "true"'
+      workload:
+        trainJob:
+          runtimeRef:
+            kind: TrainingRuntime
+            name: test-runtime
+          trainer:
+            image: test-image:latest
+            command:
+              - python
+              - train.py
+            numNodes: 1
+  orchestration:
+    iterations: 1
+    target:
+      nodeSelector:
+        nvidia.com/gpu.present: "true"

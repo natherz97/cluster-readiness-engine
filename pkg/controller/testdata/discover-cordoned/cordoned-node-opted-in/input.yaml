@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# ADR-081: an operator targets an already-cordoned node by declaring a
+# taintSelectors entry for node.kubernetes.io/unschedulable. node002 carries
+# the taint cordoning actually applies, so it is included rather than
+# reported as cordoned/excluded.
+nodes:
+  - name: node002
+    cordoned: true
+    taints:
+      - key: node.kubernetes.io/unschedulable
+        effect: NoSchedule
+target:
+  taintSelectors:
+    - key: node.kubernetes.io/unschedulable
+      effect: NoSchedule

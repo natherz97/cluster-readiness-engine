@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# ADR-081: a cordoned node carrying the taint cordoning applies is opted into
+# selection via target.taintSelectors. Node discovery must not exclude it, and
+# the Job must be created with no nodeHealthMonitor rather than the default
+# node.spec.unschedulable == true expression, which would immediately mark the
+# Job HardwareFailed on the very node it was targeted to run against.
+apiVersion: v1
+kind: Node
+metadata:
+  name: cordon-selected-node-01
+  labels:
+    nvidia.com/gpu.present: "true"
+    nvidia.com/gpu.product: "NVIDIA-H100"
+    kubernetes.io/hostname: cordon-selected-node-01
+spec:
+  providerID: "aws://us-east-1a/i-cccc0001"
+  unschedulable: true
+  taints:
+    - key: node.kubernetes.io/unschedulable
+      effect: NoSchedule
+---
+apiVersion: nvcre.nvidia.com/v1alpha1
+kind: Workflow
+metadata:
+  name: test-cordoned-selected
+  namespace: default
+spec:
+  jobTemplate:
+    spec:
+      workload:
+        trainJob:
+          runtimeRef:
+            kind: TrainingRuntime
+            name: test-runtime
+          trainer:
+            image: test-image:latest
+            command:
+              - python
+              - train.py
+            numNodes: 1
+  orchestration:
+    iterations: 1
+    target:
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      taintSelectors:
+        - key: node.kubernetes.io/unschedulable
+          effect: NoSchedule

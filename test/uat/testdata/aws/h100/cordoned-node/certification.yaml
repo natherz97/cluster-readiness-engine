@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# ADR-081: targets the single cordoned node in nodes.yaml via nodeNames +
+# taintSelectors, mirroring the ADR's example. nccl-loopback is single-node,
+# so no healthy peer is needed alongside the cordoned node under test.
+apiVersion: nvcre.nvidia.com/v1alpha1
+kind: Certification
+metadata:
+  name: aws-h100-cordoned-node
+spec:
+  target:
+    nodeSelector:
+      nvidia.com/gpu.present: "true"
+    nodeNames:
+      - aws-h100-cordoned-node-01
+    taintSelectors:
+      - key: node.kubernetes.io/unschedulable
+        effect: NoSchedule
+  nodesPerJob: 1
+  categories:
+    - domain: communication
+      variant: nccl-loopback

@@ -659,18 +659,25 @@ func discoverTargetNodes(ctx context.Context, reader client.Reader, target *nvcr
 	// would turn a fully certified fleet into INCOMPLETE over a node that could
 	// never have been tested. That is reachable whenever the target is not the
 	// usual gpu.present selector — a nodeNames list can pull in CPU nodes.
-	var schedulable []corev1.Node
+	//
+	// Skipped entirely when the target opts into cordoned nodes (ADR-081): every
+	// node that survived the taintSelectors filter above already matched the
+	// node.kubernetes.io/unschedulable taint, so it is cordoned by construction
+	// and intended to be included, not reported as excluded.
 	var cordoned []string
-	for _, n := range nodes {
-		if n.Spec.Unschedulable {
-			if n.Labels[GPUNodeLabel] == present {
-				cordoned = append(cordoned, n.Name)
+	if !targetsCordonedNodes(target) {
+		var schedulable []corev1.Node
+		for _, n := range nodes {
+			if n.Spec.Unschedulable {
+				if n.Labels[GPUNodeLabel] == present {
+					cordoned = append(cordoned, n.Name)
+				}
+				continue
 			}
-			continue
+			schedulable = append(schedulable, n)
 		}
-		schedulable = append(schedulable, n)
+		nodes = schedulable
 	}
-	nodes = schedulable
 
 	// Filter to GPU-equipped nodes only
 	var gpuFiltered []corev1.Node
@@ -721,6 +728,23 @@ func nodeHasTaint(node corev1.Node, sel nvcrev1alpha1.TaintSelector) bool {
 			continue
 		}
 		return true
+	}
+	return false
+}
+
+// targetsCordonedNodes reports whether target opts into selecting cordoned
+// nodes by declaring a taintSelectors entry for the taint cordon applies.
+// See ADR-081: this is the sole opt-in signal, so callers that skip cordon
+// exclusion in node discovery and clear the default node health monitor both
+// key off this same check.
+func targetsCordonedNodes(target *nvcrev1alpha1.TargetSpec) bool {
+	if target == nil {
+		return false
+	}
+	for _, sel := range target.TaintSelectors {
+		if sel.Key == corev1.TaintNodeUnschedulable {
+			return true
+		}
 	}
 	return false
 }
@@ -1057,8 +1081,15 @@ func (r *WorkflowReconciler) createJobForGroup(ctx context.Context, workflow *nv
 		applyDiagnoseMNNVLOverride(&job.Spec.Workload, orch.Diagnose, group.Nodes)
 	}
 
-	// Set default node health monitor if not already configured
-	if job.Spec.NodeHealthMonitor == nil {
+	// Set default node health monitor if not already configured. When the
+	// target opts into cordoned nodes (ADR-081), clear it unconditionally
+	// instead — the unschedulable check would immediately mark the Job
+	// HardwareFailed on the very node it was targeted to run against, whether
+	// that check came from the catalog's jobTemplate, a hand-authored
+	// Workflow, or this default.
+	if targetsCordonedNodes(workflow.Spec.Orchestration.Target) {
+		job.Spec.NodeHealthMonitor = nil
+	} else if job.Spec.NodeHealthMonitor == nil {
 		job.Spec.NodeHealthMonitor = &nvcrev1alpha1.NodeHealthMonitor{
 			CEL: &nvcrev1alpha1.CELNodeHealthCheck{
 				Expression: `node.spec.unschedulable == true`,
